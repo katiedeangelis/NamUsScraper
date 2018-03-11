@@ -20,11 +20,11 @@ public class Scrape {
      * @param args The arguments for the test - but we won't be using them.
      */
     public static void main(String[] args) {
-        int stateCount = 30;
+        int stateCount = 43;
         ChromeDriver driver = new ChromeDriver();
         WebDriverWait wait = new WebDriverWait(driver, 600);
 
-        while (stateCount <= 30) {
+        while (stateCount <= 55) {
             // Reset results variable at the top of the loop for new state
             results = new HashMap<String, HashMap>();
 
@@ -54,10 +54,10 @@ public class Scrape {
 
             // While the next case button is available continue to click it until it's no longer available
             // i.e. you reached the end of the cases
-            /*while (driver.findElements(By.id("NextCase")).size() > 0) {
+            while (driver.findElements(By.id("NextCase")).size() > 0) {
                 driver.findElement(By.id("NextCase")).click();
                 _processAccount(driver, wait);
-            }*/
+            }
 
             // Once you've reached the end of the cases increment the state count by one
             stateCount += 1;
@@ -100,18 +100,22 @@ public class Scrape {
         HashMap<String, HashMap> accountResults = new HashMap<String, HashMap>();
 
         // Wait for the tsb title to change and the case info header to load
-        if ("1".equals(_currentCaseID)) {
-            _sleep(2000);
-        } else if (!"".equals(_currentCaseID)) {
-            wait.until(ExpectedConditions.not(ExpectedConditions.titleContains(_currentCaseID)));
+        if (!"".equals(_currentCaseID)) {
+            try {
+                wait.until(ExpectedConditions.not(ExpectedConditions.titleContains(_currentCaseID)));
+            } catch (TimeoutException e) {
+                System.out.println("Failed to wait until " + _currentCaseID + " was not in " + driver.getTitle());
+            }
         }
         // Wait until the Case Information appears
         wait.until(ExpectedConditions.presenceOfElementLocated(By.id("case_information")));
-        // There is a 600ms animation on the case info that you have to account for when automating (thanks jQuery)
-        _sleep(600);
+
+        // Force all of the informational sections to appear
+        driver.executeScript("return jQuery(\".case_block\").css(\"display\", \"block\");");
 
         // Parse the case id from after the number sign (do not include the #)
         int hashLoc = driver.getTitle().lastIndexOf('#') + 1;
+
         // Remove the space before the case id and assign the number to the caseID variable
         String caseID = driver.getTitle().substring(hashLoc).trim();
 
@@ -120,18 +124,15 @@ public class Scrape {
 
         // Parse out each page of data by calling the helper functions
         accountResults.put("caseInfo", _utilParseTableRows(driver, By.cssSelector("#case_information table tr")));
-        accountResults.put("circumstances", _parseCircumstances(driver));
-        accountResults.put("characteristics", _parsePhysicalCharacteristics(driver));
+        accountResults.put("circumstances", _utilParseTableRows(driver, By.cssSelector("#circumstances table tr")));
+        accountResults.put("characteristics", _utilParseTableRows(driver, By.cssSelector("#physical_characteristics table tr")));
+        accountResults.put("investigatingAgency", _utilParseTableRows(driver, By.cssSelector("#police_information table tr")));
+        accountResults.put("caseManager", _utilParseTableRows(driver, By.cssSelector("#contacts .column2-unit-left table tr")));
+        accountResults.put("regionalAdministrator", _utilParseTableRows(driver, By.cssSelector("#contacts .column2-unit-right table tr")));
         accountResults.put("photos", _parsePhotos(driver));
-        accountResults.put("investigatingAgency", _parseInvestigatingAgency(driver));
-        _parseContacts(driver, accountResults);
 
         // Add the current account results to the full list of accounts
         results.put(caseID, accountResults);
-
-        // Switch back to case information and wait for animation to finish before moving on
-        //driver.executeScript("change_block(\"case_information\")");
-        //_sleep(1200);
     }
 
     /**
@@ -168,26 +169,12 @@ public class Scrape {
                 continue;
             } else if (tdCount == 3) {
                 // Some tables have an initial first data element we don't care about (like check boxes) skip those
-                //key = row.findElement(By.cssSelector("td:nth-child(2)")).getText();
-                //value = row.findElement(By.cssSelector("td:nth-child(3)")).getText();
-
-                //ey = driver.executeScript("return jQuery(arguments[0]).find(\"td:nth-child(2)\").text();", row).toString();
-                //value = driver.executeScript("return jQuery(arguments[0]).find(\"td:nth-child(3)\").text();", row).toString();
-
-                key = driver.executeScript("return arguments[0].querySelector(\"td:nth-child(2)\").innerText;", row).toString();
-                value = driver.executeScript("return arguments[0].querySelector(\"td:nth-child(3)\").innerText;", row).toString();
+                key = row.findElement(By.cssSelector("td:nth-child(2)")).getText();
+                value = row.findElement(By.cssSelector("td:nth-child(3)")).getText();
             } else {
                 // Grab label and information within row to create a key value pair
-                //key = row.findElement(By.cssSelector("td:nth-child(1)")).getText();
-                //value = row.findElement(By.cssSelector("td:nth-child(2)")).getText();
-
-                //key = driver.executeScript("return jQuery(arguments[0]).find(\"td:nth-child(1)\").text();", row).toString();
-                //value = driver.executeScript("return jQuery(arguments[0]).find(\"td:nth-child(2)\").text();", row).toString();
-
-                key = driver.executeScript("return arguments[0].querySelector(\"td:nth-child(1)\").innerText;", row).toString();
-                value = driver.executeScript("return arguments[0].querySelector(\"td:nth-child(2)\").innerText;", row).toString();
-
-
+                key = row.findElement(By.cssSelector("td:nth-child(1)")).getText();
+                value = row.findElement(By.cssSelector("td:nth-child(2)")).getText();
             }
 
             // Call helper function to clean up the key
@@ -203,41 +190,12 @@ public class Scrape {
     }
 
     /**
-     * This function handles parsing out the data from the case circumstances page
-     *
-     * @param driver WebDriver to use
-     * @return HashMap of circumstance information
-     */
-    private static HashMap<String, String> _parseCircumstances(ChromeDriver driver) {
-        //driver.executeScript("change_block(\"circumstances\")");
-        //_sleep(1200);
-
-        return _utilParseTableRows(driver, By.cssSelector("#circumstances table tr"));
-    }
-
-    /**
-     * This function handles parsing out the data from the case physical characteristics page
-     *
-     * @param driver WebDriver to use
-     * @return HashMap of circumstance information
-     */
-    private static HashMap<String, String> _parsePhysicalCharacteristics(ChromeDriver driver) {
-        //driver.executeScript("change_block(\"physical_characteristics\")");
-        //_sleep(1200);
-
-        return _utilParseTableRows(driver, By.cssSelector("#physical_characteristics table tr"));
-    }
-
-    /**
      * This function handles parsing out the data from the photos page
      *
      * @param driver WebDriver to use
      * @return HashMap of circumstance information
      */
     private static HashMap<String, String> _parsePhotos(ChromeDriver driver) {
-        //driver.executeScript("change_block(\"photos\")");
-        //_sleep(1200);
-
         // Info to return
         HashMap<String, String> info = new HashMap<String, String>();
 
@@ -259,48 +217,6 @@ public class Scrape {
         }
 
         return info;
-    }
-
-    /**
-     * This function handles parsing out the data from the case contacts page
-     *
-     * @param driver WebDriver to use
-     * @param results HashMap to data to
-     * @return HashMap of circumstance information
-     */
-    private static void _parseContacts(ChromeDriver driver, HashMap results) {
-        //driver.executeScript("change_block(\"contacts\")");
-        //_sleep(1200);
-
-        // Since contacts has two important bits of information add them to the hash map
-        results.put("caseManager", _utilParseTableRows(driver, By.cssSelector("#contacts .column2-unit-left table tr")));
-        results.put("regionalAdministrator", _utilParseTableRows(driver, By.cssSelector("#contacts .column2-unit-right table tr")));
-    }
-
-    /**
-     * This function handles parsing out the data from the case investigating agency page
-     *
-     * @param driver WebDriver to use
-     * @return HashMap of circumstance information
-     */
-    private static HashMap<String, String> _parseInvestigatingAgency(ChromeDriver driver) {
-        //driver.executeScript("change_block(\"police_information\")");
-        //_sleep(1200);
-
-        return _utilParseTableRows(driver, By.cssSelector("#police_information table tr"));
-    }
-
-    /**
-     * This function makes the java process wait the given time
-     *
-     * @param time Amount of time to sleep in seconds
-     */
-    private static void _sleep(int time) {
-        try {
-            Thread.sleep(time);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
     }
 
     /**
@@ -354,8 +270,10 @@ public class Scrape {
                 returnKey = "dateReported";
                 break;
             case "address 1":
+                returnKey = "address1";
+                break;
             case "address 2":
-                returnKey = returnKey.replaceAll(" ", "");
+                returnKey = "address2";
                 break;
             // Characteristics...
             case "left eye color":
